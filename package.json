@@ -5,8 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "build:ui": "cd dashboard && npm install && npm run build",
-    "postinstall": "npx playwright install chromium"
+    "build:ui": "cd dashboard && npm install && npm run build"
   },
   "keywords": [],
   "author": "",
