@@ -296,7 +296,18 @@ app.post('/api/clear-logs', (req, res) => {
     res.json({ success: true });
 });
 
-const PORT = 5000;
+// Frontend UI ulash (Production uchun)
+const distPath = path.join(__dirname, 'dashboard', 'dist');
+if (fs.existsSync(distPath)) {
+    app.use(express.static(distPath));
+    app.get('*', (req, res) => {
+        if (!req.path.startsWith('/api')) {
+            res.sendFile(path.join(distPath, 'index.html'));
+        }
+    });
+}
+
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     addLog(`🚀 Forever Decoder API — Port: ${PORT}`);
 });
