@@ -9,8 +9,14 @@ function App() {
     isRunning: false,
     status: 'Yuklanmoqda...',
     currentMovieCode: null,
+    currentLanguage: null,
     progress: 0,
     logs: []
+  });
+
+  const [dashboardData, setDashboardData] = useState({
+    pending: [],
+    recent: []
   });
 
   const fetchStatus = async () => {
@@ -22,9 +28,22 @@ function App() {
     }
   };
 
+  const fetchDashboardData = async () => {
+    try {
+      const res = await axios.get(`${API_URL}/dashboard-data`);
+      setDashboardData(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
-    const interval = setInterval(fetchStatus, 2000);
+    fetchDashboardData();
+    const interval = setInterval(() => {
+      fetchStatus();
+      fetchDashboardData();
+    }, 3000);
     return () => clearInterval(interval);
   }, []);
 
@@ -52,6 +71,13 @@ function App() {
     return 'info';
   };
 
+  const getFlag = (lang) => {
+    if (lang === 'uzb') return '🇺🇿 UZB';
+    if (lang === 'rus') return '🇷🇺 RUS';
+    if (lang === 'eng') return '🇺🇸 ENG';
+    return lang ? `❓ ${lang.toUpperCase()}` : '⏳ Kutmoqda...';
+  };
+
   return (
     <div className="dashboard-container">
       <div className="header">
@@ -67,6 +93,12 @@ function App() {
           <h3>Joriy Video</h3>
           <div className="value" style={{ fontSize: '24px' }}>
             {state.currentMovieCode || 'Yo\'q'}
+          </div>
+        </div>
+        <div className="stat-card">
+          <h3>AI Til Detektori</h3>
+          <div className="value lang-badge">
+            {getFlag(state.currentLanguage)}
           </div>
         </div>
         <div className="stat-card" style={{ gridColumn: 'span 2' }}>
@@ -94,6 +126,49 @@ function App() {
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
           To'xtatish
         </button>
+      </div>
+
+      <div className="dashboard-panels">
+        {/* Navbat */}
+        <div className="panel">
+          <h3>⏳ Navbat (Kutayotganlar - {dashboardData.pending.length})</h3>
+          <div className="queue-list">
+            {dashboardData.pending.length === 0 ? <p className="text-muted">Navbat bo'sh</p> : 
+              dashboardData.pending.map((p, i) => (
+                <div key={i} className="queue-item">
+                  <span>🎬 {p.movie_code}</span>
+                  <span className="queue-status">Kutmoqda</span>
+                </div>
+              ))
+            }
+          </div>
+        </div>
+
+        {/* Tayyor videolar galereyasi */}
+        <div className="panel">
+          <h3>✅ So'nggi Tayyor Videolar</h3>
+          <div className="gallery-list">
+            {dashboardData.recent.length === 0 ? <p className="text-muted">Hali videolar yo'q</p> :
+              dashboardData.recent.map((r, i) => (
+                <div key={i} className="gallery-item">
+                  <div className="gallery-meta">
+                    <strong>{r.movie_code}</strong>
+                    <span className="success-text">Yakunlandi</span>
+                  </div>
+                  <div className="thumbnails">
+                    {r.thumbnails && Array.isArray(r.thumbnails) ? (
+                      r.thumbnails.map((img, idx) => (
+                        <img key={idx} src={img} alt="thumbnail" />
+                      ))
+                    ) : (
+                      <div className="no-thumb">Rasm yo'q</div>
+                    )}
+                  </div>
+                </div>
+              ))
+            }
+          </div>
+        </div>
       </div>
 
       <div className="log-container">

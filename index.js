@@ -3,6 +3,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { extractVideoUrl, downloadVideo } = require('./extractor');
 const { processVideo } = require('./transcoder');
 const { uploadToB2 } = require('./uploader');
+const { detectLanguage } = require('./ai_processor');
 const fs = require('fs');
 const path = require('path');
 const cron = require('node-cron');
@@ -16,6 +17,7 @@ let serverState = {
     isRunning: false,
     status: 'Kutmoqda...',
     currentMovieCode: null,
+    currentLanguage: null,
     progress: 0,
     logs: []
 };
@@ -25,7 +27,7 @@ let cronJob = null;
 function addLog(msg) {
     console.log(msg);
     serverState.logs.unshift({ time: new Date().toISOString(), message: msg });
-    if (serverState.logs.length > 100) serverState.logs.pop(); // faqat so'nggi 100 ta log
+    if (serverState.logs.length > 100) serverState.logs.pop(); 
     serverState.status = msg;
 }
 
@@ -35,6 +37,7 @@ function isNotProcessed(row, res) {
     if (row[res].web === null || row[res].web === 'null') return true;
     return false;
 }
+
 
 async function processJob() {
     if (serverState.isRunning) return; // Prevent overlapping
@@ -84,15 +87,32 @@ async function processJob() {
         addLog("[*] Videofayl serverga yuklanmoqda...");
         await downloadVideo(directUrl, tmpFile);
         
+        serverState.progress = 50;
+        addLog("[*] AI: Tilni aniqlash jarayoni boshlandi...");
+        const langCode = await detectLanguage(tmpFile);
+        serverState.currentLanguage = langCode;
+        
         serverState.progress = 60;
-        addLog("[*] FFmpeg Transcode jarayoni boshlandi...");
-        const generated = await processVideo(tmpFile);
+        addLog(`[*] FFmpeg Transcode jarayoni boshlandi (Tili: ${langCode}, +Watermark, +Thumbnails)...`);
+        const { generatedFiles, thumbFiles } = await processVideo(tmpFile, langCode);
         
         serverState.progress = 80;
         let updates = {};
+        let thumbUrls = [];
         
-        addLog("[*] B2 bulutiga yuklanmoqda...");
-        for (let item of generated) {
+        addLog("[*] B2 bulutiga videolar va rasmlar yuklanmoqda...");
+        
+        for (let t of thumbFiles) {
+            const fileName = `${row.movie_code}_thumb_${Date.now()}_${path.basename(t)}`;
+            const cdnUrl = await uploadToB2(t, fileName);
+            thumbUrls.push(cdnUrl);
+            fs.unlinkSync(t);
+        }
+        if (thumbUrls.length > 0) {
+            updates['thumbnails'] = thumbUrls;
+        }
+        
+        for (let item of generatedFiles) {
             const fileName = `${row.movie_code}_${Date.now()}_${item.resolution}.mkv`;
             const cdnUrl = await uploadToB2(item.path, fileName);
             updates[item.resolution] = { web: cdnUrl };
@@ -122,6 +142,7 @@ async function processJob() {
         serverState.isRunning = false;
         if (serverState.progress === 100) {
              serverState.status = 'Kutmoqda...';
+             serverState.currentLanguage = null;
         }
     }
 }
@@ -133,6 +154,38 @@ app.use(express.json());
 
 app.get('/api/status', (req, res) => {
     res.json(serverState);
+});
+
+app.get('/api/dashboard-data', async (req, res) => {
+    try {
+        const { data: mvideos, error } = await supabase.from('mvideos').select('*');
+        if (error) throw error;
+        
+        let pending = [];
+        let recent = [];
+        
+        for (let row of mvideos) {
+            // Null check for 144p => pending
+            if (isNotProcessed(row, '144p')) {
+                pending.push(row);
+            } else {
+                recent.push(row);
+            }
+        }
+        
+        // Sort pending by created_at asc (oldest first)
+        pending.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        
+        // Sort recent by updated/created desc (newest first)
+        recent.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+        
+        res.json({
+            pending: pending.slice(0, 10), // Limit to 10
+            recent: recent.slice(0, 3)     // Limit to 3
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 app.post('/api/start', (req, res) => {

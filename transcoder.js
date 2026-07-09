@@ -18,22 +18,57 @@ async function getVideoInfo(filePath) {
             const videoStream = metadata.streams.find(s => s.codec_type === 'video');
             resolve({
                 width: videoStream.width,
-                height: videoStream.height
+                height: videoStream.height,
+                duration: metadata.format.duration
             });
         });
     });
 }
 
-async function transcodeVideo(inputPath, resolution, outputPath) {
+async function extractThumbnails(inputPath, duration, baseName, baseDir) {
     return new Promise((resolve, reject) => {
-        console.log(`[*] Transcoding to ${resolution.name}...`);
+        const timestamps = [
+            Math.floor(duration * 0.2), // 20%
+            Math.floor(duration * 0.5), // 50%
+            Math.floor(duration * 0.8)  // 80%
+        ];
+        console.log(`[*] Thumbnail rasmlar qirqilmoqda: ${timestamps.join(', ')} soniyalarda...`);
+        
+        ffmpeg(inputPath)
+            .on('end', () => {
+                console.log("[+] Thumbnaillar tayyor!");
+                resolve([
+                    path.join(baseDir, `${baseName}_thumb_1.jpg`),
+                    path.join(baseDir, `${baseName}_thumb_2.jpg`),
+                    path.join(baseDir, `${baseName}_thumb_3.jpg`)
+                ]);
+            })
+            .on('error', (err) => reject(err))
+            .screenshots({
+                timestamps: timestamps,
+                filename: `${baseName}_thumb_%i.jpg`,
+                folder: baseDir,
+                size: '640x360'
+            });
+    });
+}
+
+async function transcodeVideo(inputPath, resolution, outputPath, langCode) {
+    return new Promise((resolve, reject) => {
+        console.log(`[*] Transcoding to ${resolution.name} (Tili: ${langCode})...`);
+        
+        // Watermark: "Forever TV" matni
+        const watermarkFilter = `drawtext=text='Forever TV':fontcolor=white@0.5:fontsize=24:x=w-tw-20:y=20`;
+        const videoFilter = `${resolution.scale},${watermarkFilter}`;
+        
         ffmpeg(inputPath)
             .videoCodec('libx264')
             .audioCodec('aac')
             .outputOptions([
                 '-preset fast',
                 '-crf 23',
-                `-vf ${resolution.scale}`
+                `-vf ${videoFilter}`,
+                `-metadata:s:a:0 language=${langCode}` // AI aniqlagan til yorlig'i
             ])
             .on('end', () => {
                 console.log(`[+] Muvaffaqiyatli: ${resolution.name}`);
@@ -47,7 +82,7 @@ async function transcodeVideo(inputPath, resolution, outputPath) {
     });
 }
 
-async function processVideo(inputFilePath) {
+async function processVideo(inputFilePath, langCode = 'uzb') {
     const info = await getVideoInfo(inputFilePath);
     console.log(`[*] Asl video formati: ${info.width}x${info.height}`);
 
@@ -55,14 +90,20 @@ async function processVideo(inputFilePath) {
     const baseDir = path.dirname(inputFilePath);
     const baseName = path.basename(inputFilePath, path.extname(inputFilePath));
     
+    // Thumbnail olish
+    let thumbFiles = [];
+    try {
+        thumbFiles = await extractThumbnails(inputFilePath, info.duration, baseName, baseDir);
+    } catch (e) {
+        console.log("[-] Thumbnail xato:", e.message);
+    }
+
     let generatedFiles = [];
     
     for (let res of RESOLUTIONS) {
-        // Only transcode if the original height is >= this resolution's height
-        // Or if it's the closest one, we still process it
         if (originalHeight >= (res.height - 50)) {
             const outPath = path.join(baseDir, `${baseName}_${res.name}.mkv`);
-            await transcodeVideo(inputFilePath, res, outPath);
+            await transcodeVideo(inputFilePath, res, outPath, langCode);
             generatedFiles.push({
                 resolution: res.name,
                 path: outPath
@@ -70,7 +111,7 @@ async function processVideo(inputFilePath) {
         }
     }
     
-    return generatedFiles;
+    return { generatedFiles, thumbFiles };
 }
 
 module.exports = { processVideo, getVideoInfo };
