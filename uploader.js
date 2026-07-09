@@ -4,11 +4,12 @@ const path = require("path");
 
 const s3 = new S3Client({
     region: process.env.B2_REGION,
-    endpoint: `https://${process.env.B2_REGION}.backblazeb2.com`,
+    endpoint: process.env.B2_ENDPOINT || `https://s3.${process.env.B2_REGION}.backblazeb2.com`,
     credentials: {
         accessKeyId: process.env.B2_APPLICATION_KEY_ID,
         secretAccessKey: process.env.B2_APPLICATION_KEY,
-    }
+    },
+    forcePathStyle: true
 });
 
 async function uploadToB2(filePath, fileName) {
