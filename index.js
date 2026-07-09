@@ -60,9 +60,7 @@ function isNotProcessed(row, res) {
 }
 
 // ========== MAIN PROCESS ==========
-async function processJob() {
-    if (serverState.isRunning || serverState.isPaused) return;
-    serverState.isRunning = true;
+async function processNextVideo() {
     serverState.progress = 0;
     serverState.currentMovieCode = null;
     serverState.currentLanguage = null;
@@ -79,8 +77,7 @@ async function processJob() {
             
         if (error) {
             addLog(`[-] Supabase xatosi: ${error.message}`, 'error');
-            serverState.isRunning = false;
-            return;
+            return false;
         }
         
         // Fagat 'dood' havolalari filtri
@@ -91,10 +88,9 @@ async function processJob() {
         
         if (!targetRow) {
             addLog("[!] Navbatda qayta ishlanadigan Doodstream videolari yo'q.", 'warning');
-            serverState.isRunning = false;
             serverState.currentStep = null;
             serverState.status = 'Kutmoqda...';
-            return;
+            return false;
         }
         
         const row = targetRow;
@@ -102,12 +98,10 @@ async function processJob() {
         addLog(`[+] Video topildi: ${row.movie_code}`, 'success');
         
         let doodUrl = row.auto.web;
-        addLog(`[*] Doodstream: ${doodUrl}`);
         
         // Step 1: Extract
         serverState.progress = 5;
         serverState.currentStep = 'extracting';
-        addLog("[*] Doodstream havolasi chiqarilmoqda...");
         const directUrl = await extractVideoUrl(doodUrl);
         if (!directUrl) throw new Error("Doodstream bypass xato (Link o'lgan yoki botdan himoya)");
         
@@ -115,36 +109,28 @@ async function processJob() {
         serverState.progress = 15;
         serverState.currentStep = 'downloading';
         const tmpFile = path.join(__dirname, `${row.movie_code}_temp.mp4`);
-        addLog("[*] Videofayl serverga yuklanmoqda...");
         await downloadVideo(directUrl, tmpFile);
-        addLog("[+] Video muvaffaqiyatli yuklandi!", 'success');
         
-        // Step 3: TMDb Poster yuklash
+        // Step 3: TMDb Poster
         serverState.progress = 35;
-        addLog("[*] TMDb Poster yuklanmoqda...");
         let posterFile = null;
         const { data: details } = await supabase.from('mdetails').select('poster_url_16_9').eq('movie_code', row.movie_code).single();
         if (details && details.poster_url_16_9) {
             posterFile = path.join(__dirname, `${row.movie_code}_poster.jpg`);
-            await downloadVideo(details.poster_url_16_9, posterFile); // reusing download logic for simplicity
-            addLog("[+] TMDb Poster yuklandi", 'success');
-        } else {
-            addLog("[!] TMDb Poster topilmadi", 'warning');
+            await downloadVideo(details.poster_url_16_9, posterFile);
         }
 
         // Step 4: AI Language Detection
         serverState.progress = 40;
         serverState.currentStep = 'detecting_lang';
-        addLog("[*] 🤖 AI: Tilni aniqlash jarayoni boshlandi...");
         const langCode = await detectLanguage(tmpFile);
         serverState.currentLanguage = langCode;
-        addLog(`[+] 🤖 AI: Til aniqlandi -> ${langCode.toUpperCase()}`, 'success');
         
-        // Step 5: Transcode (with embedded thumbnail)
+        // Step 5: Transcode
         serverState.progress = 50;
         serverState.currentStep = 'transcoding';
         addLog(`[*] FFmpeg: Transcode (Tili: ${langCode}, +Watermark, +Embedded Poster)...`);
-        const { generatedFiles, thumbFiles } = await processVideo(tmpFile, langCode, posterFile);
+        const { generatedFiles } = await processVideo(tmpFile, langCode, posterFile);
         addLog(`[+] FFmpeg: ${generatedFiles.length} ta sifat yaratildi!`, 'success');
         
         // Step 6: Upload to B2
@@ -155,7 +141,6 @@ async function processJob() {
         
         addLog("[*] ☁️ B2 bulutiga yuklanmoqda...");
         
-        // Thumbnails - now we can optionally upload the poster itself to B2 to use as gallery thumb
         if (posterFile) {
             const fileName = `${row.movie_code}_thumb_${Date.now()}.jpg`;
             const cdnUrl = await uploadToB2(posterFile, fileName);
@@ -163,9 +148,7 @@ async function processJob() {
             fs.unlinkSync(posterFile);
         }
         
-        if (thumbUrls.length > 0) {
-            updates['thumbnails'] = thumbUrls;
-        }
+        if (thumbUrls.length > 0) updates['thumbnails'] = thumbUrls;
         
         const resNames = [];
         for (let item of generatedFiles) {
@@ -176,43 +159,76 @@ async function processJob() {
             fs.unlinkSync(item.path);
         }
         addLog(`[+] ☁️ Barcha fayllar B2 ga yuklandi!`, 'success');
-        
         fs.unlinkSync(tmpFile);
         
-        // Step 6: Update DB
-        serverState.progress = 90;
+        // Step 7: Update DB
+        serverState.progress = 95;
         serverState.currentStep = 'updating_db';
-        addLog("[*] 📦 Baza yangilanmoqda...");
-        const { error: updErr } = await supabase
+        addLog("[*] 💾 Ma'lumotlar bazasi yangilanmoqda...");
+        
+        const { error: dbError } = await supabase
             .from('mvideos')
             .update(updates)
             .eq('movie_code', row.movie_code);
             
-        if (updErr) {
-            addLog(`[-] Baza yangilash xatosi: ${updErr.message}`, 'error');
-            serverState.totalErrors++;
-        } else {
-            const duration = Math.round((Date.now() - jobStart) / 1000);
-            addLog(`[+] ✅ ${row.movie_code} — ${duration}s da yakunlandi!`, 'success');
-            serverState.totalProcessed++;
-            addHistory(row.movie_code, 'success', langCode, resNames, duration);
-        }
+        if (dbError) throw dbError;
         
         serverState.progress = 100;
+        serverState.status = 'Tayyor!';
+        serverState.totalProcessed++;
         
+        const dur = Math.floor((Date.now() - jobStart) / 1000);
+        addLog(`[+] 🎉 Barchasi tayyor! (${resNames.join(', ')}) | Vaqt: ${dur}s`, 'success');
+        
+        serverState.history.unshift({
+            movieCode: row.movie_code,
+            status: 'success',
+            langCode: langCode,
+            resolutions: resNames,
+            duration: dur,
+            time: new Date()
+        });
+        
+        return true;
+
     } catch (err) {
-        addLog(`[-] ❌ Xato: ${err.message}`, 'error');
         serverState.totalErrors++;
-        const duration = Math.round((Date.now() - jobStart) / 1000);
-        addHistory(serverState.currentMovieCode || '?', 'error', null, [], duration);
-    } finally {
-        serverState.isRunning = false;
-        serverState.currentStep = null;
-        if (serverState.progress === 100) {
-            serverState.status = 'Kutmoqda...';
-            serverState.currentLanguage = null;
+        addLog(`[-] ❌ Xato: ${err.message}`, 'error');
+        serverState.status = 'Xatolik yuz berdi';
+        serverState.history.unshift({
+            movieCode: serverState.currentMovieCode || 'Noma\'lum',
+            status: 'error',
+            error: err.message,
+            time: new Date()
+        });
+        return false;
+    }
+}
+
+async function processQueueLoop() {
+    if (serverState.isRunning) return;
+    serverState.isRunning = true;
+    serverState.isPaused = false;
+    addLog("[*] 🚀 Navbat ishlashni boshladi.", 'success');
+    
+    while(serverState.isRunning) {
+        if (serverState.isPaused) {
+            await new Promise(r => setTimeout(r, 5000));
+            continue;
+        }
+        
+        const didProcess = await processNextVideo();
+        
+        if (!didProcess) {
+            addLog("[*] Kutish rejimi... (Yangi video qidirilmoqda)", 'info');
+            serverState.status = "Kutmoqda...";
+            for(let i=0; i<12; i++) {
+                 if(!serverState.isRunning) break;
+                 await new Promise(r => setTimeout(r, 5000));
+            }
         }
     }
+    addLog("[*] 🛑 Navbat to'liq to'xtatildi.", 'warning');
 }
 
 // ========== EXPRESS API ==========
@@ -220,12 +236,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Server holati
 app.get('/api/status', (req, res) => {
     res.json(serverState);
 });
 
-// Dashboard uchun to'liq statistika
 app.get('/api/stats', async (req, res) => {
     try {
         const { data: mvideos, error } = await supabase.from('mvideos').select('*');
@@ -235,13 +249,13 @@ app.get('/api/stats', async (req, res) => {
         let completed = [];
         
         for (let row of mvideos) {
-            if (isNotProcessed(row, '144p')) {
+            if (isNotProcessed(row, '144p') && row.auto && row.auto.web && row.auto.web.toLowerCase().includes('dood')) {
                 pending.push({
                     movie_code: row.movie_code,
                     dood_url: row.auto?.web || null,
                     created_at: row.created_at
                 });
-            } else {
+            } else if (!isNotProcessed(row, '144p')) {
                 completed.push({
                     movie_code: row.movie_code,
                     thumbnails: row.thumbnails || [],
@@ -250,9 +264,6 @@ app.get('/api/stats', async (req, res) => {
                 });
             }
         }
-        
-        pending.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-        completed.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
         
         res.json({
             totalVideos: mvideos.length,
@@ -270,67 +281,34 @@ app.get('/api/stats', async (req, res) => {
     }
 });
 
-// Renderni boshlash
 app.post('/api/start', (req, res) => {
-    if (!cronJob) {
-        cronJob = cron.schedule('0 * * * *', () => {
-            processJob();
-        });
-        serverState.cronActive = true;
-        serverState.isPaused = false;
-        addLog("[*] ⏰ Server yoqildi (Har soatlik tsikl boshlandi).", 'success');
-    }
     if (!serverState.isRunning) {
-        processJob();
+        processQueueLoop();
+    } else if (serverState.isPaused) {
+        serverState.isPaused = false;
+        addLog("[*] ▶ Navbat pauzadan chiqdi va davom etmoqda.", 'success');
     }
     res.json({ success: true, message: "Started" });
 });
 
-// Renderni to'xtatish
-app.post('/api/stop', (req, res) => {
-    if (cronJob) {
-        cronJob.stop();
-        cronJob = null;
-        serverState.cronActive = false;
-        addLog("[*] 🛑 Server va tsikl to'xtatildi.", 'warning');
-    }
-    res.json({ success: true, message: "Stopped" });
-});
-
-// Pauza
 app.post('/api/pause', (req, res) => {
     serverState.isPaused = true;
-    addLog("[*] ⏸ Navbat pauza qilindi. (Hozirgi video tugagach to'xtaydi)", 'warning');
+    addLog("[*] ⏸ Navbat pauza qilindi. (Hozirgi video tugagach kutib turadi)", 'warning');
     res.json({ success: true, message: "Paused" });
 });
 
-// Davom etish
-app.post('/api/resume', (req, res) => {
+app.post('/api/stop', (req, res) => {
+    serverState.isRunning = false;
     serverState.isPaused = false;
-    addLog("[*] ▶ Navbat davom etmoqda.", 'success');
-    if (!serverState.isRunning) {
-        processJob();
-    }
-    res.json({ success: true, message: "Resumed" });
+    res.json({ success: true, message: "Stopped" });
 });
 
-// Bitta videoni qo'lda ishga tushirish
-app.post('/api/process-now', (req, res) => {
-    if (serverState.isRunning) {
-        return res.json({ success: false, message: "Allaqachon ishlayapti" });
-    }
-    processJob();
-    res.json({ success: true, message: "Jarayon boshlandi" });
-});
-
-// Loglarni tozalash
 app.post('/api/clear-logs', (req, res) => {
     serverState.logs = [];
     addLog("[*] Loglar tozalandi.", 'info');
     res.json({ success: true });
 });
 
-// Frontend UI ulash (Production uchun)
 const distPath = path.join(__dirname, 'dashboard', 'dist');
 if (fs.existsSync(distPath)) {
     app.use(express.static(distPath));

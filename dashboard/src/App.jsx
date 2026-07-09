@@ -54,17 +54,11 @@ function App() {
   const handleStop = async () => {
     try { await axios.post(`${API}/stop`); fetchAll(); } catch {}
   };
-  const handleProcessNow = async () => {
-    try { await axios.post(`${API}/process-now`); fetchAll(); } catch {}
-  };
-  const handleClearLogs = async () => {
-    try { await axios.post(`${API}/clear-logs`); fetchAll(); } catch {}
-  };
   const handlePause = async () => {
     try { await axios.post(`${API}/pause`); fetchAll(); } catch {}
   };
-  const handleResume = async () => {
-    try { await axios.post(`${API}/resume`); fetchAll(); } catch {}
+  const handleClearLogs = async () => {
+    try { await axios.post(`${API}/clear-logs`); fetchAll(); } catch {}
   };
 
   const getFlag = (lang) => {
@@ -132,27 +126,23 @@ function App() {
              <><Terminal size={28}/> Terminal</>}
           </h1>
           <div className="top-bar-actions">
-            {status.isPaused ? (
-               <button className="btn btn-primary" onClick={handleResume}>
-                 ▶ Davom etish
-               </button>
-            ) : (
-               <button className="btn btn-ghost" onClick={handlePause} style={{ color: '#f59e0b' }}>
-                 ⏸ Pauza
-               </button>
-            )}
-            <button className="btn btn-ghost" onClick={handleProcessNow} disabled={status.isRunning}>
-              <Play size={16}/> Hozir Ishga Tushir
-            </button>
-            {!status.cronActive ? (
+            {!status.isRunning ? (
               <button className="btn btn-primary" onClick={handleStart}>
-                <RefreshCcw size={16}/> Auto Renderni Yoqish
+                <Play size={16}/> Boshlash
+              </button>
+            ) : status.isPaused ? (
+              <button className="btn btn-primary" onClick={handleStart}>
+                <Play size={16}/> Davom etish
               </button>
             ) : (
-              <button className="btn btn-danger" onClick={handleStop}>
-                <Square size={16}/> To'xtatish
+              <button className="btn btn-ghost" onClick={handlePause} style={{ color: '#f59e0b' }}>
+                <Clock3 size={16}/> Pauza
               </button>
             )}
+            
+            <button className="btn btn-danger" onClick={handleStop} disabled={!status.isRunning && !status.isPaused}>
+              <Square size={16}/> To'xtatish
+            </button>
           </div>
         </div>
 
