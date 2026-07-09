@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: forever-decoder
+    env: docker
+    region: frankfurt
+    plan: starter # yoki boshqa plan
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: B2_BUCKET_ID
+        sync: false
+      - key: B2_KEY_ID
+        sync: false
+      - key: B2_APP_KEY
+        sync: false
+      - key: B2_ENDPOINT
+        sync: false
+      - key: B2_REGION
+        sync: false
+      - key: B2_BUCKET_NAME
+        sync: false
+      - key: DOODSTREAM_API_KEY
+        sync: false

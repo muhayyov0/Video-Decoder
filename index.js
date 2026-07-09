@@ -55,7 +55,7 @@ function addHistory(movieCode, status, langCode, resolutions, duration) {
 function isNotProcessed(row, res) {
     if (!row[res]) return true;
     if (row[res] === null) return true;
-    if (row[res].web === null || row[res].web === 'null') return true;
+    if (!row[res].B2 || row[res].B2 === 'null') return true;
     return false;
 }
 
@@ -148,13 +148,20 @@ async function processNextVideo() {
             fs.unlinkSync(posterFile);
         }
         
-        if (thumbUrls.length > 0) updates['thumbnails'] = thumbUrls;
+        if (thumbUrls.length > 0) {
+            // Agar avvaldan rasmlar bo'lsa, ularga qo'shamiz yoxud yangidan yozamiz
+            updates['thumbnails'] = [...(row.thumbnails || []), ...thumbUrls];
+        }
         
         const resNames = [];
         for (let item of generatedFiles) {
             const fileName = `${row.movie_code}_${Date.now()}_${item.resolution}.mkv`;
             const cdnUrl = await uploadToB2(item.path, fileName);
-            updates[item.resolution] = { web: cdnUrl };
+            
+            // Bazadagi eski ma'lumotlarni saqlab qolish (masalan: web, tele)
+            const oldObj = row[item.resolution] || {};
+            updates[item.resolution] = { ...oldObj, B2: cdnUrl };
+            
             resNames.push(item.resolution);
             fs.unlinkSync(item.path);
         }
@@ -259,7 +266,7 @@ app.get('/api/stats', async (req, res) => {
                 completed.push({
                     movie_code: row.movie_code,
                     thumbnails: row.thumbnails || [],
-                    resolutions: ['1080p','720p','480p','360p','244p','144p'].filter(r => row[r] && row[r].web && row[r].web !== 'null'),
+                    resolutions: ['1080p','720p','480p','360p','244p','144p'].filter(r => row[r] && ((row[r].B2 && row[r].B2 !== 'null') || (row[r].web && row[r].web !== 'null'))),
                     created_at: row.created_at
                 });
             }
