@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { 
+  Play, Square, RefreshCcw, Activity, Server, Clock, Trash2, 
+  Film, CheckCircle, Clock3, AlertCircle, Terminal, History, ListVideo
+} from 'lucide-react';
 import './index.css';
 
 const API = 'http://localhost:5000/api';
@@ -80,7 +84,7 @@ function App() {
       {/* ====== SIDEBAR ====== */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="logo-icon">⚡</div>
+          <div className="logo-icon"><Activity size={24} color="white" /></div>
           <div>
             <h2>Forever Decoder</h2>
             <span>Video Processing Hub</span>
@@ -89,17 +93,17 @@ function App() {
 
         <nav className="sidebar-nav">
           <div className={`nav-item ${tab === 'dashboard' ? 'active' : ''}`} onClick={() => setTab('dashboard')}>
-            <span className="nav-icon">📊</span> Dashboard
+            <span className="nav-icon"><Activity size={18} /></span> Dashboard
           </div>
           <div className={`nav-item ${tab === 'queue' ? 'active' : ''}`} onClick={() => setTab('queue')}>
-            <span className="nav-icon">⏳</span> Navbat
+            <span className="nav-icon"><ListVideo size={18} /></span> Navbat
             {stats.totalPending > 0 && <span className="panel-count">{stats.totalPending}</span>}
           </div>
           <div className={`nav-item ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
-            <span className="nav-icon">📜</span> Tarix
+            <span className="nav-icon"><History size={18} /></span> Tarix
           </div>
           <div className={`nav-item ${tab === 'logs' ? 'active' : ''}`} onClick={() => setTab('logs')}>
-            <span className="nav-icon">🖥️</span> Terminal
+            <span className="nav-icon"><Terminal size={18} /></span> Terminal
           </div>
         </nav>
 
@@ -115,18 +119,23 @@ function App() {
       {/* ====== MAIN ====== */}
       <main className="main-content">
         <div className="top-bar">
-          <h1>{tab === 'dashboard' ? '📊 Dashboard' : tab === 'queue' ? '⏳ Navbat' : tab === 'history' ? '📜 Tarix' : '🖥️ Terminal'}</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {tab === 'dashboard' ? <><Activity size={28}/> Dashboard</> : 
+             tab === 'queue' ? <><ListVideo size={28}/> Navbat</> : 
+             tab === 'history' ? <><History size={28}/> Tarix</> : 
+             <><Terminal size={28}/> Terminal</>}
+          </h1>
           <div className="top-bar-actions">
             <button className="btn btn-ghost" onClick={handleProcessNow} disabled={status.isRunning}>
-              ▶ Hozir Ishga Tushir
+              <Play size={16}/> Hozir Ishga Tushir
             </button>
             {!status.cronActive ? (
               <button className="btn btn-primary" onClick={handleStart}>
-                ⚡ Auto Renderni Yoqish
+                <RefreshCcw size={16}/> Auto Renderni Yoqish
               </button>
             ) : (
               <button className="btn btn-danger" onClick={handleStop}>
-                ⏹ To'xtatish
+                <Square size={16}/> To'xtatish
               </button>
             )}
           </div>
@@ -140,28 +149,28 @@ function App() {
               <div className="stat-card blue animate-in">
                 <div className="stat-header">
                   <h4>Jami Videolar</h4>
-                  <div className="stat-icon blue">🎬</div>
+                  <div className="stat-icon blue"><Film size={18} /></div>
                 </div>
                 <div className="stat-value">{stats.totalVideos}</div>
               </div>
               <div className="stat-card green animate-in">
                 <div className="stat-header">
                   <h4>Tayyor</h4>
-                  <div className="stat-icon green">✅</div>
+                  <div className="stat-icon green"><CheckCircle size={18} /></div>
                 </div>
                 <div className="stat-value">{stats.totalCompleted}</div>
               </div>
               <div className="stat-card amber animate-in">
                 <div className="stat-header">
                   <h4>Navbatda</h4>
-                  <div className="stat-icon amber">⏳</div>
+                  <div className="stat-icon amber"><Clock size={18} /></div>
                 </div>
                 <div className="stat-value">{stats.totalPending}</div>
               </div>
               <div className="stat-card purple animate-in">
                 <div className="stat-header">
                   <h4>Xatolar</h4>
-                  <div className="stat-icon purple">❌</div>
+                  <div className="stat-icon purple"><AlertCircle size={18} /></div>
                 </div>
                 <div className="stat-value">{stats.totalErrors}</div>
               </div>
@@ -169,7 +178,9 @@ function App() {
 
             {/* Process Card */}
             <div className="process-card">
-              <h3>{status.isRunning ? '🔄 Hozir Ishlayapti...' : '💤 Kutmoqda'}</h3>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {status.isRunning ? <><RefreshCcw size={18} className="spin-icon" /> Hozir Ishlayapti...</> : <><Clock3 size={18} /> Kutmoqda</>}
+              </h3>
               <div className="process-info">
                 <div className="process-detail">
                   <label>Video Kodi</label>
@@ -203,12 +214,12 @@ function App() {
             <div className="panels-grid">
               <div className="panel">
                 <div className="panel-header">
-                  <h3>⏳ Kutayotganlar</h3>
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Clock size={16} /> Kutayotganlar</h3>
                   <span className="panel-count">{stats.totalPending}</span>
                 </div>
                 <div className="panel-body">
                   {stats.pending.length === 0 ? (
-                    <div className="empty-state"><span className="empty-icon">🎉</span> Navbat bo'sh!</div>
+                    <div className="empty-state"><span className="empty-icon"><CheckCircle size={32} /></span> Navbat bo'sh!</div>
                   ) : stats.pending.slice(0, 8).map((p, i) => (
                     <div key={i} className="queue-item">
                       <div className="queue-item-left">
@@ -223,19 +234,19 @@ function App() {
 
               <div className="panel">
                 <div className="panel-header">
-                  <h3>✅ So'nggi Tayyorlar</h3>
+                  <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><CheckCircle size={16} /> So'nggi Tayyorlar</h3>
                   <span className="panel-count">{stats.totalCompleted}</span>
                 </div>
                 <div className="panel-body">
                   {stats.completed.length === 0 ? (
-                    <div className="empty-state"><span className="empty-icon">📭</span> Hali tayyor video yo'q</div>
+                    <div className="empty-state"><span className="empty-icon"><Film size={32} /></span> Hali tayyor video yo'q</div>
                   ) : stats.completed.slice(0, 6).map((c, i) => (
                     <div key={i} className="gallery-item">
                       <div className="gallery-thumb">
                         {c.thumbnails && c.thumbnails[0] ? (
                           <img src={c.thumbnails[0]} alt="thumb" />
                         ) : (
-                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px' }}>🎬</div>
+                          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#666' }}><Film size={20} /></div>
                         )}
                       </div>
                       <div className="gallery-info">
@@ -254,8 +265,8 @@ function App() {
             <div className="log-panel">
               <div className="log-header">
                 <div className="log-dots"><span></span><span></span><span></span></div>
-                <h3>🖥️ Jonli Terminal</h3>
-                <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: '11px' }} onClick={handleClearLogs}>Tozalash</button>
+                <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Terminal size={14} /> Jonli Terminal</h3>
+                <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: '11px' }} onClick={handleClearLogs}><Trash2 size={12} /> Tozalash</button>
               </div>
               <div className="log-body">
                 {status.logs.slice(0, 30).map((l, i) => (
@@ -273,12 +284,12 @@ function App() {
         {tab === 'queue' && (
           <div className="panel" style={{ maxHeight: 'none', flex: 1 }}>
             <div className="panel-header">
-              <h3>⏳ Barcha Navbatdagi Videolar</h3>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><ListVideo size={16} /> Barcha Navbatdagi Videolar</h3>
               <span className="panel-count">{stats.totalPending} ta</span>
             </div>
             <div className="panel-body">
               {stats.pending.length === 0 ? (
-                <div className="empty-state"><span className="empty-icon">🎉</span> Navbat bo'sh — barcha videolar tayyor!</div>
+                <div className="empty-state"><span className="empty-icon"><CheckCircle size={40} /></span> Navbat bo'sh — barcha videolar tayyor!</div>
               ) : stats.pending.map((p, i) => (
                 <div key={i} className="queue-item">
                   <div className="queue-item-left">
@@ -296,17 +307,17 @@ function App() {
         {tab === 'history' && (
           <div className="panel" style={{ maxHeight: 'none', flex: 1 }}>
             <div className="panel-header">
-              <h3>📜 Render Tarixi (Ushbu sessiya)</h3>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><History size={16} /> Render Tarixi (Ushbu sessiya)</h3>
               <span className="panel-count">{stats.history.length} ta</span>
             </div>
             <div className="panel-body">
               {stats.history.length === 0 ? (
-                <div className="empty-state"><span className="empty-icon">📭</span> Hali hech qanday video render qilinmagan</div>
+                <div className="empty-state"><span className="empty-icon"><History size={40} /></span> Hali hech qanday video render qilinmagan</div>
               ) : stats.history.map((h, i) => (
                 <div key={i} className="queue-item">
                   <div className="queue-item-left">
                     <span className="queue-num" style={{ background: h.status === 'success' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: h.status === 'success' ? 'var(--accent-green)' : 'var(--accent-red)' }}>
-                      {h.status === 'success' ? '✓' : '✗'}
+                      {h.status === 'success' ? <CheckCircle size={14} /> : <AlertCircle size={14} />}
                     </span>
                     <span>{h.movieCode}</span>
                   </div>
@@ -328,8 +339,8 @@ function App() {
           <div className="log-panel" style={{ flex: 1 }}>
             <div className="log-header">
               <div className="log-dots"><span></span><span></span><span></span></div>
-              <h3>🖥️ To'liq Terminal</h3>
-              <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: '11px' }} onClick={handleClearLogs}>Tozalash</button>
+              <h3 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Terminal size={14} /> To'liq Terminal</h3>
+              <button className="btn btn-ghost" style={{ padding: '5px 10px', fontSize: '11px' }} onClick={handleClearLogs}><Trash2 size={12} /> Tozalash</button>
             </div>
             <div className="log-body" style={{ height: 'calc(100vh - 200px)' }}>
               {status.logs.map((l, i) => (
