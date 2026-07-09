@@ -25,51 +25,39 @@ async function getVideoInfo(filePath) {
     });
 }
 
-async function extractThumbnails(inputPath, duration, baseName, baseDir) {
-    return new Promise((resolve, reject) => {
-        const timestamps = [
-            Math.floor(duration * 0.2), // 20%
-            Math.floor(duration * 0.5), // 50%
-            Math.floor(duration * 0.8)  // 80%
-        ];
-        console.log(`[*] Thumbnail rasmlar qirqilmoqda: ${timestamps.join(', ')} soniyalarda...`);
-        
-        ffmpeg(inputPath)
-            .on('end', () => {
-                console.log("[+] Thumbnaillar tayyor!");
-                resolve([
-                    path.join(baseDir, `${baseName}_thumb_1.jpg`),
-                    path.join(baseDir, `${baseName}_thumb_2.jpg`),
-                    path.join(baseDir, `${baseName}_thumb_3.jpg`)
-                ]);
-            })
-            .on('error', (err) => reject(err))
-            .screenshots({
-                timestamps: timestamps,
-                filename: `${baseName}_thumb_%i.jpg`,
-                folder: baseDir,
-                size: '640x360'
-            });
-    });
-}
-
-async function transcodeVideo(inputPath, resolution, outputPath, langCode) {
+async function transcodeVideo(inputPath, resolution, outputPath, langCode, posterPath) {
     return new Promise((resolve, reject) => {
         console.log(`[*] Transcoding to ${resolution.name} (Tili: ${langCode})...`);
         
-        // Watermark: "Forever TV" matni
         const watermarkFilter = `drawtext=text='Forever TV':fontcolor=white@0.5:fontsize=24:x=w-tw-20:y=20`;
         const videoFilter = `${resolution.scale},${watermarkFilter}`;
         
-        ffmpeg(inputPath)
+        let command = ffmpeg(inputPath);
+        
+        if (posterPath) {
+            command = command.input(posterPath);
+        }
+
+        command
             .videoCodec('libx264')
             .audioCodec('aac')
             .outputOptions([
                 '-preset fast',
                 '-crf 23',
                 `-vf ${videoFilter}`,
-                `-metadata:s:a:0 language=${langCode}` // AI aniqlagan til yorlig'i
-            ])
+                `-metadata:s:a:0 language=${langCode}`
+            ]);
+
+        if (posterPath) {
+            command.outputOptions([
+                '-map 0',
+                '-map 1',
+                '-c:v:1 copy',
+                '-disposition:v:1 attached_pic'
+            ]);
+        }
+
+        command
             .on('end', () => {
                 console.log(`[+] Muvaffaqiyatli: ${resolution.name}`);
                 resolve(outputPath);
@@ -82,7 +70,7 @@ async function transcodeVideo(inputPath, resolution, outputPath, langCode) {
     });
 }
 
-async function processVideo(inputFilePath, langCode = 'uzb') {
+async function processVideo(inputFilePath, langCode = 'uzb', posterFile = null) {
     const info = await getVideoInfo(inputFilePath);
     console.log(`[*] Asl video formati: ${info.width}x${info.height}`);
 
@@ -90,20 +78,12 @@ async function processVideo(inputFilePath, langCode = 'uzb') {
     const baseDir = path.dirname(inputFilePath);
     const baseName = path.basename(inputFilePath, path.extname(inputFilePath));
     
-    // Thumbnail olish
-    let thumbFiles = [];
-    try {
-        thumbFiles = await extractThumbnails(inputFilePath, info.duration, baseName, baseDir);
-    } catch (e) {
-        console.log("[-] Thumbnail xato:", e.message);
-    }
-
     let generatedFiles = [];
     
     for (let res of RESOLUTIONS) {
         if (originalHeight >= (res.height - 50)) {
             const outPath = path.join(baseDir, `${baseName}_${res.name}.mkv`);
-            await transcodeVideo(inputFilePath, res, outPath, langCode);
+            await transcodeVideo(inputFilePath, res, outPath, langCode, posterFile);
             generatedFiles.push({
                 resolution: res.name,
                 path: outPath
@@ -111,7 +91,7 @@ async function processVideo(inputFilePath, langCode = 'uzb') {
         }
     }
     
-    return { generatedFiles, thumbFiles };
+    return { generatedFiles, thumbFiles: [] };
 }
 
 module.exports = { processVideo, getVideoInfo };

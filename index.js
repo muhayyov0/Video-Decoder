@@ -61,7 +61,7 @@ function isNotProcessed(row, res) {
 
 // ========== MAIN PROCESS ==========
 async function processJob() {
-    if (serverState.isRunning) return;
+    if (serverState.isRunning || serverState.isPaused) return;
     serverState.isRunning = true;
     serverState.progress = 0;
     serverState.currentMovieCode = null;
@@ -83,13 +83,14 @@ async function processJob() {
             return;
         }
         
+        // Fagat 'dood' havolalari filtri
         const targetRow = mvideos.find(row => 
-            (row.auto && row.auto.web && row.auto.web !== 'null') && 
+            (row.auto && row.auto.web && row.auto.web !== 'null' && row.auto.web.toLowerCase().includes('dood')) && 
             isNotProcessed(row, '144p')
         );
         
         if (!targetRow) {
-            addLog("[!] Navbatda qayta ishlanadigan videolar yo'q.", 'warning');
+            addLog("[!] Navbatda qayta ishlanadigan Doodstream videolari yo'q.", 'warning');
             serverState.isRunning = false;
             serverState.currentStep = null;
             serverState.status = 'Kutmoqda...';
@@ -118,7 +119,20 @@ async function processJob() {
         await downloadVideo(directUrl, tmpFile);
         addLog("[+] Video muvaffaqiyatli yuklandi!", 'success');
         
-        // Step 3: AI Language Detection
+        // Step 3: TMDb Poster yuklash
+        serverState.progress = 35;
+        addLog("[*] TMDb Poster yuklanmoqda...");
+        let posterFile = null;
+        const { data: details } = await supabase.from('mdetails').select('poster_url_16_9').eq('movie_code', row.movie_code).single();
+        if (details && details.poster_url_16_9) {
+            posterFile = path.join(__dirname, `${row.movie_code}_poster.jpg`);
+            await downloadVideo(details.poster_url_16_9, posterFile); // reusing download logic for simplicity
+            addLog("[+] TMDb Poster yuklandi", 'success');
+        } else {
+            addLog("[!] TMDb Poster topilmadi", 'warning');
+        }
+
+        // Step 4: AI Language Detection
         serverState.progress = 40;
         serverState.currentStep = 'detecting_lang';
         addLog("[*] 🤖 AI: Tilni aniqlash jarayoni boshlandi...");
@@ -126,14 +140,14 @@ async function processJob() {
         serverState.currentLanguage = langCode;
         addLog(`[+] 🤖 AI: Til aniqlandi -> ${langCode.toUpperCase()}`, 'success');
         
-        // Step 4: Transcode
+        // Step 5: Transcode (with embedded thumbnail)
         serverState.progress = 50;
         serverState.currentStep = 'transcoding';
-        addLog(`[*] FFmpeg: Transcode (Tili: ${langCode}, +Watermark, +Thumbnails)...`);
-        const { generatedFiles, thumbFiles } = await processVideo(tmpFile, langCode);
+        addLog(`[*] FFmpeg: Transcode (Tili: ${langCode}, +Watermark, +Embedded Poster)...`);
+        const { generatedFiles, thumbFiles } = await processVideo(tmpFile, langCode, posterFile);
         addLog(`[+] FFmpeg: ${generatedFiles.length} ta sifat yaratildi!`, 'success');
         
-        // Step 5: Upload to B2
+        // Step 6: Upload to B2
         serverState.progress = 75;
         serverState.currentStep = 'uploading';
         let updates = {};
@@ -141,12 +155,14 @@ async function processJob() {
         
         addLog("[*] ☁️ B2 bulutiga yuklanmoqda...");
         
-        for (let t of thumbFiles) {
-            const fileName = `${row.movie_code}_thumb_${Date.now()}_${path.basename(t)}`;
-            const cdnUrl = await uploadToB2(t, fileName);
+        // Thumbnails - now we can optionally upload the poster itself to B2 to use as gallery thumb
+        if (posterFile) {
+            const fileName = `${row.movie_code}_thumb_${Date.now()}.jpg`;
+            const cdnUrl = await uploadToB2(posterFile, fileName);
             thumbUrls.push(cdnUrl);
-            fs.unlinkSync(t);
+            fs.unlinkSync(posterFile);
         }
+        
         if (thumbUrls.length > 0) {
             updates['thumbnails'] = thumbUrls;
         }
@@ -261,6 +277,7 @@ app.post('/api/start', (req, res) => {
             processJob();
         });
         serverState.cronActive = true;
+        serverState.isPaused = false;
         addLog("[*] ⏰ Server yoqildi (Har soatlik tsikl boshlandi).", 'success');
     }
     if (!serverState.isRunning) {
@@ -278,6 +295,23 @@ app.post('/api/stop', (req, res) => {
         addLog("[*] 🛑 Server va tsikl to'xtatildi.", 'warning');
     }
     res.json({ success: true, message: "Stopped" });
+});
+
+// Pauza
+app.post('/api/pause', (req, res) => {
+    serverState.isPaused = true;
+    addLog("[*] ⏸ Navbat pauza qilindi. (Hozirgi video tugagach to'xtaydi)", 'warning');
+    res.json({ success: true, message: "Paused" });
+});
+
+// Davom etish
+app.post('/api/resume', (req, res) => {
+    serverState.isPaused = false;
+    addLog("[*] ▶ Navbat davom etmoqda.", 'success');
+    if (!serverState.isRunning) {
+        processJob();
+    }
+    res.json({ success: true, message: "Resumed" });
 });
 
 // Bitta videoni qo'lda ishga tushirish

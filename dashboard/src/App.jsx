@@ -60,6 +60,12 @@ function App() {
   const handleClearLogs = async () => {
     try { await axios.post(`${API}/clear-logs`); fetchAll(); } catch {}
   };
+  const handlePause = async () => {
+    try { await axios.post(`${API}/pause`); fetchAll(); } catch {}
+  };
+  const handleResume = async () => {
+    try { await axios.post(`${API}/resume`); fetchAll(); } catch {}
+  };
 
   const getFlag = (lang) => {
     if (lang === 'uzb') return '🇺🇿 O\'zbek';
@@ -126,6 +132,15 @@ function App() {
              <><Terminal size={28}/> Terminal</>}
           </h1>
           <div className="top-bar-actions">
+            {status.isPaused ? (
+               <button className="btn btn-primary" onClick={handleResume}>
+                 ▶ Davom etish
+               </button>
+            ) : (
+               <button className="btn btn-ghost" onClick={handlePause} style={{ color: '#f59e0b' }}>
+                 ⏸ Pauza
+               </button>
+            )}
             <button className="btn btn-ghost" onClick={handleProcessNow} disabled={status.isRunning}>
               <Play size={16}/> Hozir Ishga Tushir
             </button>
